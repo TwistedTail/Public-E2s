@@ -1,0 +1,467 @@
+@name lib/func_ronson
+@persist [Gun Turret Base WeldLatch]:entity
+@persist [Cr Am Fu Ch Wi Em Ba Storage Protected]:array [TypeTable]:table
+@persist [Wait Count Drowned DrownTime Ammo TotalAmmo NoCrew Finished]:number
+@persist [OnDestroyed OnHull OnTurret OnExplosion Suicide]:number
+@persist [Amount Spawning GetProps GetChildren SortProps]:number
+@persist [IsAmphibious CanDarkenProps PropDarknessMult]:number
+@persist [HullForceMult TurretForceMult AutoCleanProps]:number
+@persist [Interval CanPopTurret ExplosionProbability MinCriticalCaliber]:number
+
+#--------------------------------- Library made by TwistedTail --------------------------------#
+#--------------------------------------- Version 1.0.2 ----------------------------------------#
+#--------------------------------- Updates for this library: ----------------------------------#
+#------------ https://github.com/TwistedTail/Public-E2s/tree/master/RonsonCore%20V5 -----------#
+#------------- Create a folder called "lib" inside your E2 folder before saving this ----------#
+#------------------ This E2 doesn't has to be spawned into your contraption. ------------------#
+
+TypeTable = table("acf_ammo" = Am, "acf_fueltank" = Fu, "prop_vehicle_prisoner_pod" = Ch, "gmod_wire_gate" = Wi,
+                  "gmod_wire_output" = Wi, "gmod_wire_speedometer" = Wi, "particlecontroller_normal" = Em)
+
+Interval = 1
+Spawning = 1
+
+enableConstraintUndo(0)
+
+#Extremely ghetto function, makes the E2 wait until every hologram is spawned to keep working normally.
+#Or at least that's what it tries to do.
+function waitForSpawn()
+{
+    if (Amount == holoAmount())
+    {
+        Wait++
+        if (Wait >= 8) { GetProps = 1 Spawning = 0 }
+    }
+    else
+    {
+        Wait = 0
+    }
+    
+    Amount = holoAmount()
+}
+
+#In case E:constraintBreak() doesn't exist, we make it work with E:removeAllConstraints().
+#ifndef entity:constraintBreak()
+    function entity:constraintBreak() { This:removeAllConstraints() }
+#endif
+
+#Hopefully this will work someday
+#Yet another ghetto implemented function, tries to get children entities even if the function is broken (Pre-January 2018 fix).
+#If the function doesn't exist at all (Pre-June 2017) then it'll just return an empty array.
+#[
+function array entity:childrenEnts()
+{
+    #ifdef entity:children()
+        local Child = This:children()
+        local Result = array()
+        
+        if (Child)
+        {
+            if (Child[1, entity])
+            {
+                Result = Child
+            }
+            else
+            {
+                foreach (I:number, E:entity = Child)
+                {
+                    Result[I, entity] = E
+                }
+            }
+        }
+        
+        return Result
+    #else
+        return array()
+    #endif
+}
+]#
+
+#Basic function to darken the contraption's entities when it gets destroyed based on the PropDarknessMult variable.
+function darkenProps()
+{
+    if (!CanDarkenProps){ return }
+    
+    PropDarknessMult = clamp(PropDarknessMult, 0, 1)
+    
+    foreach (I:number, E:entity = Storage)
+    {
+        if (E:getAlpha() <= 50){ continue }
+        
+        local GetColor = E:getColor()
+        local SetColor = vec((GetColor[1]+GetColor[2]+GetColor[3])/3)
+        
+        E:setColor(SetColor*PropDarknessMult)
+    }
+}
+
+#This is only intended to protect props that are relevant to this E2 itself by making them not solid so everything goes as intended.
+function entity:protectProps()
+{
+    local S = This ? !This:isFrozen() & !OnDestroyed : 0
+    
+    foreach (I:number, E:entity = Protected){ E:propNotSolid(S) }
+}
+
+#If the vehicle is on fire then we kill all the people on pods and then we delete those pods
+function killChairs()
+{
+    if (OnHull) { foreach (I:number, E:entity = Ch){ E:killPod() } }
+    Ch:propDelete()
+    
+    Interval = 0
+}
+
+#This is where the magic is done, of course if CanPopTurret is not zero. Otherwise it's just sounds and a little jump.
+function explodeVehicle()
+{
+    if (OnExplosion | !OnHull){ return }
+    
+    local Probability  = clamp(floor(ExplosionProbability), 0, 100)
+    local RandomChance = randint(1, 100)
+
+    if (inrange(RandomChance, 1, Probability))
+    {
+        local HullForce   = Base:mass() * HullForceMult * Ammo/TotalAmmo
+        local TurretForce = Gun:mass() * 1.5 * TurretForceMult * Ammo/TotalAmmo
+              OnExplosion = 1
+            
+        stoptimer("First")
+        timer("First", 0)
+        local Sound = "ambient/explosions/explode_"+randint(1,9)+".wav"
+        Base:soundPlay(3, soundDuration(Sound), Sound)
+        Base:applyForce(HullForce * 500 * Gun:up())
+        Base:applyTorque(HullForce * 1500 * (Gun:right() * random(-0.75,0.75) + Gun:forward() * random(-0.75,0.75)))
+        
+        if (!CanPopTurret){ return }
+        
+        WeldLatch:propDelete()
+        
+        Base:protectProps()
+        Gun:constraintBreak()
+        Gun:propGravity(1) #Just in case
+        OnTurret = 0
+
+        if (Turret)
+        {
+            Turret:setMass(Gun:mass()*1.5)
+            Turret:constraintBreak()
+            Turret:propGravity(1)
+            weld(Gun, Turret)
+            Turret:applyForce(TurretForce * 1200 * (Gun:up() + Gun:right() * random(-0.3,0.3) + Gun:forward() * random(-0.3,0.3)))
+            Turret:applyTorque(TurretForce * 100 * (Gun:right() * random(-0.25,0.25) + Gun:forward() * random(-0.25,0.25)))
+        }
+        else
+        {
+            Gun:applyForce(TurretForce * 400 * (Gun:up() * random(0.1,0.3) + Gun:forward()))
+        }
+    }
+}
+
+#This will get called no matter how the vehicle gets destroyed.
+function destroyVehicle()
+{
+    if (OnDestroyed){ return }
+    
+    if (!Drowned & !Suicide & !NoCrew)
+    {
+        OnHull = OnTurret = 1
+        
+        foreach (I:number, E:entity = Cr){ Ammo += E:wirelink()["Munitions",number] }
+        
+        local Sound = "ambient/fire/fire_med_loop1.wav"
+        Base:soundPlay(1, 99999, Sound)
+        local Sound = "ambient/fire/ignite.wav"
+        Base:soundPlay(2, soundDuration(Sound), Sound)
+    }
+    
+    OnDestroyed = 1
+
+    Cr:propDelete()
+    Am:propDelete()
+    Fu:propDelete()
+    
+    darkenProps()
+    explodeVehicle()
+        
+    timer("First", 1000)
+    timer("Second", 6000)
+    timer("Delete", 12000)
+}
+
+#Unnecessarily long function to display messages when everything's done.
+function message()
+{
+    if (Storage:count() <= 1){ Interval = 0 return }
+    
+    local HasEnts = Cr:count() | Fu:count()
+    local HasSeat = Ch:count()
+    
+    local Green = vec(120,255,120)
+    local Red   = vec(255,0,0)
+    local White = vec(255)
+
+    local Message = array(Green, "[RonsonCore V5]: ",
+                          White, "Found your contraption with ",
+                          Red, ""+Storage:count(),
+                          White, " entities.\n")
+    
+    if (HasEnts)
+    {
+        if (Cr:count())
+        {
+            local Array = array(Green, "[RonsonCore V5]: ",
+                                White, "Found ",
+                                Red, ""+Cr:count(),
+                                White, " critical crate(s) from a total of ",
+                                Red, ""+Am:count(),
+                                White, " crate(s).\n")
+                                
+            Message = Message:add(Array)
+        }
+        elseif (Am:count())
+        {
+            local Array = array(Red, "[RonsonCore V5]: ",
+                                White, "Found ",
+                                Red, ""+Am:count(),
+                                White, " ammo crate(s) but ",
+                                Red, "0",
+                                White, " critical ones. Tweak MinCriticalCaliber?\n")
+                                
+            Message = Message:add(Array)
+        }
+        
+        if (Fu:count())
+        {
+            local Array = array(Green, "[RonsonCore V5]: ",
+                                White, "Found ",
+                                Red, ""+Fu:count(),
+                                White, " fuel tank(s)\n")
+                                
+            Message = Message:add(Array)
+        }
+    }
+    else
+    {
+        local Array = array(Red, "[RonsonCore V5]: ",
+                            White, "No critical ammo crates or fuel tanks were found.\n")
+                            
+        Message = Message:add(Array)
+    }
+    
+    if (HasSeat)
+    {
+        local Array = array(Green, "[RonsonCore V5]: ",
+                            White, "Found ",
+                            Red, ""+Ch:count(),
+                            White, " chair(s)\n")
+                                
+        Message = Message:add(Array)
+    }
+    else
+    {
+        local Array = array(Red, "[RonsonCore V5]: ",
+                            White, "No chairs were found.\n")
+                            
+        Message = Message:add(Array)
+    }
+    
+    local Color  = HasEnts & HasSeat ? Green : Red
+    local Status = HasEnts & HasSeat ? "Startup complete. You're ready to go." : "Shutting down the E2."
+    
+    local Array = array(Color, "[RonsonCore V5]: ",
+                        White, Status)
+                        
+    Message = Message:add(Array)
+
+    printColor(Message)
+    
+    Interval = HasEnts & HasSeat
+}
+
+#This is where we get our physical props, unless the server doesn't has E:children().
+#In that case we just use a find and hope everything gets detected.
+function entity:getProps()
+{
+    #ifdef entity:children()
+        local Result = array()
+        local Array  = This:getConstraints()
+              Array[Array:count()+1, entity] = This
+        
+        local N = 0
+        foreach (I:number, E:entity = Array)
+        { 
+            if (!E:parent()) { N++ Result[N, entity] = E } 
+        }
+        
+        Storage = Ba = Result
+
+        timer("GetChildren", 200)
+    #else
+        setName("RonsonCore V5 - Update Wiremod\nUsing findInSphere Mode!")
+    
+        findIncludePlayerProps(owner())
+        findInSphere(Base:pos(), 2000)
+        Storage = findToArray()
+        
+        timer("SortProps", 200)
+    #endif
+    
+    GetProps = 0
+}
+
+#Black magic that gets the parented part of the contraption based on the physical props we got previously.
+function array getChildren()
+{
+    #ifdef entity:children()
+        local Children = Storage
+        local Found    = array()
+        
+        while (perf() & Children) {
+            foreach (I:number, E:entity = Children)
+            {
+                Found = Found:add(E:children())
+            }
+            Children = Found
+            Storage  = Storage:add(Found)
+            Found    = array()
+        }
+        
+        if (!Children:count())
+        {
+            Count = GetChildren = 0
+            timer("SortProps", 200)
+            return Storage
+        }
+    #else
+        return array()
+    #endif
+}
+
+#This is where we throw all the relevant entities into different arrays.
+#The types and arrays where those will go are defined with the table called TypeTable
+function sortProps()
+{
+    while (perf() & Count < Storage:count())
+    {
+        Count++
+        local E = Storage[Count, entity]
+        local T = E:type()
+        local A = TypeTable[T, array]
+        
+        if (A & E != Base & E != Gun)
+        {
+            E["Exists", number] = 1
+            
+            switch(T)
+            {
+                case "acf_ammo",
+                    A[A:count()+1, entity] = E
+                        
+                    if (E:acfCaliber() >= MinCriticalCaliber & E:acfAmmoType() != "SM")
+                    {
+                        TotalAmmo += E:wirelink()["Munitions",number]
+                        
+                        Cr[Cr:count()+1, entity] = E
+                    }
+                break
+                case "particlecontroller_normal",
+                    A[A:count()+1, entity] = E:parent()
+                break
+                default,
+                    A[A:count()+1, entity] = E
+                break
+            }
+        }
+    }
+    
+    if (Count >= Storage:count())
+    {
+        Count     = SortProps = 0
+        Protected = Wi:add(Em)
+        Protected[Protected:count()+1, entity] = entity()
+        if (Turret != Gun) { Protected[Protected:count()+1, entity] = Turret }
+        timer("EndMessage", 1500)
+    }
+}
+
+#This is a function we will constantly call in order to check our ammo is fine.
+function entity:checkAmmo()
+{
+    if (OnDestroyed | !Cr:count()){ return }
+    
+    for (I = Cr:count(), 1, -1)
+    {
+        local Wirelink = Cr[I, entity]:wirelink()
+        local OnFire   = Wirelink["On Fire", number]
+        local Munition = Wirelink["Munitions", number]
+        local Exists   = Wirelink:entity()["Exists", number]
+        local Frozen   = This:isFrozen()
+        
+        if (!Munition & Exists){ continue }
+        
+        if (OnFire & Munition | !Exists & !Frozen){ destroyVehicle() return }
+        elseif (!Exists & Frozen){ Cr:removeEntity(I) }
+    }
+}
+
+#Same as E:checkAmmo() but now with fuel.
+function entity:checkFuel()
+{
+    if (OnDestroyed | !Fu:count()){ return }
+    
+    for (I = Fu:count(), 1, -1)
+    {
+        local Wirelink = Fu[I, entity]:wirelink()
+        local HasFuel  = Wirelink["Fuel", number]
+        local Exists   = Wirelink:entity()["Exists", number]
+        local Frozen   = This:isFrozen()
+        
+        if (!HasFuel & Exists){ continue }
+        
+        if (!Exists)
+        { 
+            if (!Frozen){ destroyVehicle() return }
+            else{ Fu:removeEntity(I) }
+        }
+    }
+}
+
+#We will also check if our contraption still has chairs on it, otherwise we will declare it useless and destroy it.
+function entity:checkChairs()
+{
+    if (OnDestroyed){ return }
+    
+    for (I = Ch:count(), 1, -1){
+        local Chair  = Ch[I, entity]
+        local Exists = Chair["Exists", number]
+        
+        if (!Exists){ Ch:removeEntity(I) }
+    }
+    
+    if (Ch:count() | This:isFrozen()){ return }
+    
+    NoCrew = 1
+    destroyVehicle()
+}
+
+#Finally we will check if our entity is underwater.
+#If it wasn't defined to be amphibious or previously destroyed then it'll destroy itself
+function entity:checkDrowned()
+{
+    if (IsAmphibious | OnDestroyed | This:isFrozen()){ return }
+    
+    Drowned = Gun:isUnderWater()
+    
+    if (!Drowned){ DrownTime = 0 return }
+    
+    DrownTime++
+    if (DrownTime>40){ destroyVehicle() }
+}
+
+#Self-explainatory. This removes the contraption for you.
+function cleanProps()
+{
+    if (!AutoCleanProps){ return }
+    Ba:propDelete()
+}

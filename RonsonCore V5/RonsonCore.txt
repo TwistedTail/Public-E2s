@@ -1,0 +1,55 @@
+@name RonsonCore V5
+@inputs [Base Turret Gun WeldLatch]:entity [Suicide]:number
+@outputs [Props]:array [OnDestroyed OnHull OnTurret OnExplosion]:number
+
+#----------------- E2 made by TwistedTail - Thanks to Aki for testing and idea ----------------#
+#--------------------------------------- Version 5.0.2 ----------------------------------------#
+#------------------------------------ Updates for the E2: -------------------------------------#
+#------------ https://github.com/TwistedTail/Public-E2s/tree/master/RonsonCore%20V5 -----------#
+
+if (duped() | dupefinished()){ reset() }
+if (first())
+{
+    #include "lib/func_ronson"
+    
+    ExplosionProbability = 30       #Probability from 0% to 100% than your vehicle will explode
+    MinCriticalCaliber   = 20       #Minimal caliber in mm of ammunition to be considered "critical"
+    
+    CanPopTurret         = 1        #Defines if you want to send the turret flying when the vehicle explodes
+    HullForceMult        = 1        #Multiplier for force applied to the hull when your ammunition explodes
+    TurretForceMult      = 1        #Multiplier for force applied to the turret when your ammunition explodes
+    
+    IsAmphibious         = 0        #Defines if your vehicle can drive on water without getting destroyed
+    
+    CanDarkenProps       = 1        #Defines if you want to darken the props of your vehicle when it gets destroyed
+    PropDarknessMult     = 0.5      #Between 1 and 0, defines how dark your props will get after the vehicle gets destroyed
+    
+    AutoCleanProps       = 1        #Defines if you want the vehicle to delete itself after it gets destroyed
+}
+elseif (Spawning){ waitForSpawn() }
+elseif (GetProps){ Base:getProps() }
+elseif (GetChildren){ Props = getChildren() }
+elseif (SortProps){ sortProps() }
+elseif (Suicide){ destroyVehicle() }
+elseif (clkName())
+{
+    switch (clkName())
+    {
+        case "GetChildren", GetChildren = 1 break
+        case "SortProps", SortProps = 1 break
+        case "EndMessage", Finished = 1 message() break
+        case "First", killChairs() break
+        case "Second", explodeVehicle() break
+        case "Delete", cleanProps() break
+        case "interval",
+            Base:checkAmmo()
+            Base:checkFuel()
+            Base:checkChairs()
+            Base:checkDrowned()
+        break
+    }
+}
+
+if (!Spawning & changed(Base:isFrozen())){ Base:protectProps() }
+
+if (Interval){ interval(200) }
