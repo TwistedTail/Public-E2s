@@ -8,7 +8,7 @@
 
 #----------------------------------- Library made by TwistedTail - Version 2.0 -----------------------------------#
 #------------------------------------------ Updates for this library: --------------------------------------------#
-#------------------------  ------------------------#
+#--------------------- https://github.com/TwistedTail/Public-E2s/tree/master/Camo%20E2%20V2 ----------------------#
 #--------- Remember to create a folder called "lib" inside your Expression2 folder before saving this E2 ---------#
 #---------- This E2 doesn't has to be spawned into your contraption. I also suggest you to not edit it -----------#
 
