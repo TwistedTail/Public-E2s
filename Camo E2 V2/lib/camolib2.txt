@@ -23,6 +23,8 @@ function showMessage(Message:string)
     switch (Message)
     {
         case "OutdatedWire",
+            setName("Twisted's Camo E2 V2 - Update Wiremod!\nUsing Backup FindByClass Mode")
+
             printColor(vec(200,0,0),"[Camo] ", vec(255), "You're using an outdated version of Wiremod!")
             printColor(vec(200,0,0),"[Camo] ", vec(255), "Findind all your spawned entities instead.")
         break
@@ -115,6 +117,7 @@ function getContraption()
         findByClass("*")
 
         Entities = findToArray()
+        Entities:pushEntity(entity())
     #endif
 
     if (Entities:count() <= 1)

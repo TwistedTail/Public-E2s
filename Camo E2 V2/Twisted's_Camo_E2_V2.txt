@@ -1,7 +1,7 @@
 @name Twisted's Camo E2 V2
 @inputs [Base]:entity
 @outputs [Camo]:string [Entities]:array
-@autoupdate on
+#@autoupdate on
 
 #----------------------------------- E2 made by TwistedTail - Version 2.1 -----------------------------------#
 #------------------------------------------- Updates for the E2: --------------------------------------------#
@@ -14,8 +14,6 @@ elseif (first())
 
     AutoPaint = 1       #Set to 1 if you want the E2 to detect the map and change the camo automatically if there's one available
     DefaultCamo = ""    #In case AutoPaint is on and the map is not found, we'll use this camo
-
-    entity():setColor(vec(0,255,0))
 
     # Here's where you add camouflages
     addCamo("desert")
