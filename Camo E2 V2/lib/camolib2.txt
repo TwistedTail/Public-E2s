@@ -1,21 +1,37 @@
 @name lib/camolib2
 @persist [Base]:entity
-@persist [ColorLookup Database Types]:table
-@persist [DefaultCamo Camo CamoKey]:string
-@persist [Keys Entities PropStorage]:array
-@persist [Count NoName MatMode Reset]:number
+@persist [Keys Entities]:array
 @persist [AutoPaint Wait Amount]:number
+@persist [Count NoName MatMode Reset]:number
+@persist [DefaultCamo DetectMaterial DefaultMaterial Camo]:string
+@persist [PaintStorage MatStorage SubMatStorage SubMatData Colors Lookup Database Current]:table
 
-#----------------------------------- Library made by TwistedTail - Version 2.1 -----------------------------------#
+#----------------------------------- Library made by TwistedTail - Version 2.2 -----------------------------------#
 #------------------------------------------ Updates for this library: --------------------------------------------#
 #--------------------- https://github.com/TwistedTail/Public-E2s/tree/master/Camo%20E2%20V2 ----------------------#
 #--------- Remember to create a folder called "lib" inside your Expression2 folder before saving this E2 ---------#
 #---------- This E2 doesn't has to be spawned into your contraption. I also suggest you to not edit it -----------#
 
-ColorLookup = table("[255,0,0]" = "R", "[0,255,0]" = "G", "[0,0,255]" = "B", "[0,255,255]" = "C", "[255,255,0]" = "Y", "[255,0,255]" = "M")
-Keys = array("R","G","B","C","Y","M")
+Keys = array("R", "G", "B", "C", "Y", "M")
+
+Lookup = invert(Keys)
+
+Colors = table(
+    "[255,0,0]" = "R",
+    "[0,255,0]" = "G",
+    "[0,0,255]" = "B",
+    "[0,255,255]" = "C",
+    "[255,255,0]" = "Y",
+    "[255,0,255]" = "M"
+)
+
+DetectMaterial = "sprops/sprops_grid_12x12" #Except for this thing, change it if you want.
+
+MatMode = 1
 
 timer("Spawning", 100)
+
+runOnLast(1)
 
 #Every message that could be displayed by the E2 will be stored here
 function showMessage(Message:string)
@@ -39,7 +55,7 @@ function showMessage(Message:string)
         case "CamoNotFound",
             if (!Camo) { break }
 
-            printColor(vec(200,0,0),"[Camo] ", vec(255), "Camouflage "+Camo+" not found!")
+            printColor(vec(200,0,0),"[Camo] ", vec(255), "Camouflage '"+Camo+"' not found!")
             printColor(vec(200,0,0),"[Camo] ", vec(255), "Write !cl to list all the available camouflages.")
         break
         case "MapNotFound",
@@ -49,13 +65,14 @@ function showMessage(Message:string)
             printColor(vec(200,0,0),"[Camo] ", vec(255), "Write !cl to list all the available camouflages.")
         break
         case "ListCamo",
-            local Msg   = array(vec(200,0,0),"[Camo] ", vec(120,255,120), "Available camouflages:\n", vec(255))
-            local Text  = ""
+            local Msg = array(vec(200,0,0),"[Camo] ", vec(120,255,120), "Available camouflages:\n", vec(255))
+            local Text = ""
             local Count = Database:count()
 
-            foreach (I, K:string = Database:keys()){ 
+            foreach (I, K:string = Database:keys())
+            { 
                 Text += K
-                if (I != Count){ Text += ", " }
+                if (I != Count) { Text += ", " }
             }
             Msg:pushString(Text)
 
@@ -88,7 +105,7 @@ function waitForSpawn()
 
     if (Amount == holoAmount())
     {
-        Wait++
+        Wait += 1
         if (Wait >= 21) { Timer = "GetContraption" }
     }
     else
@@ -113,7 +130,6 @@ function getContraption()
         showMessage("OutdatedWire")
 
         findIncludePlayerProps(owner())
-        findExcludeEntity(owner())
         findByClass("*")
 
         Entities = findToArray()
@@ -130,34 +146,62 @@ function getContraption()
     timer(Timer, 200)
 }
 
-#Function to sort the entities by their color
+#Function to sort the entities by their color and material
 function sortEntities()
 {
     local Timer = "SortEntities"
     local EntCount = Entities:count()
 
-    while (perf() & Count <= EntCount)
+    while (perf() & Count < EntCount)
     {
-        Count++
+        Count += 1
         local Entity = Entities[Count, entity]
         local Color = Entity:getColor():toString()
-        local HasColor = ColorLookup[Color, string]
-        
-        if (HasColor)
+        local ColorID = Colors[Color, string]
+
+        if (!ColorID) { continue }
+
+        local Material = Entity:getMaterial()
+
+        PaintStorage:pushEntity(Entity)
+        Entity["C", string] = ColorID
+
+        if (Material & Material == DetectMaterial)
         {
-            Entity["C", string] = HasColor
-            Entity["Mat", string] = Entity:getMaterial()
-            PropStorage:pushEntity(Entity)
+            MatStorage:pushEntity(Entity)
+        }
+        else
+        {
+            local SubMats = array()
+
+            foreach (K:number, V:string = Entity:getMaterials())
+            {
+                local SubMat = Entity:getSubMaterial(K)
+
+                if (SubMat & SubMat == DetectMaterial)
+                {
+                    SubMats:pushNumber(K)
+                }
+            }
+
+            if (SubMats)
+            {
+                SubMatStorage:pushEntity(Entity)
+                SubMatData:pushArray(SubMats)
+            }
         }
     }
 
     if (Count >= EntCount)
     {
-        if (AutoPaint) { Camo = getMapCamo() }
+        if (AutoPaint)
+        {
+            Camo = getMapCamo()
+            Timer = "ApplyColors"
+        }
+        else { Timer = "LastAction" }
 
         Count = 0
-
-        Timer = "ApplyColors"
     }
 
     timer(Timer, 200)
@@ -166,30 +210,26 @@ function sortEntities()
 #Function to change the color of the entities
 function applyColors()
 {
-    local DB = Database[Camo, table]
-    local PropCount = PropStorage:count()
+    local PropCount = PaintStorage:count()
     local Timer = "ApplyColors"
-    
-    if (!DB)
+
+    Current = Database[Camo, table]
+
+    if (!Current)
     {
         showMessage("CamoNotFound")
         Timer = "LastAction"
     }
     else
     {
-        Types = DB:typeids()
-        
-        while (perf() & Count <= PropCount)
+        while (perf() & Count < PropCount)
         {
-            Count++
-            local Entity = PropStorage[Count, entity]
+            Count += 1
+            local Entity = PaintStorage[Count, entity]
             local ColorID = Entity["C", string]
-            
-            if (Types[ColorID, string] == "v") {
-                local Color = DB[ColorID, vector]
-                
-                Entity:setColor(Color)
-            }
+            local Color = Current[ColorID, vector]
+
+            Entity:setColor(Color)
         }
         if (Count >= PropCount) { Count = 0 Timer = "ApplyMaterials" }
     }
@@ -197,71 +237,80 @@ function applyColors()
     timer(Timer, 200)
 }
 
-#Function to change the material of the entities
-function setMaterial(N:number, DB:table)
+function applyMaterials()
 {
     local Timer = "ApplyMaterials"
-    local PropCount = PropStorage:count()
+    local HasMat = Current["Mat", number]
+    local NewMatMode = MatMode - Current["Mat", number]
 
-    while (perf() & Count <= PropCount)
+    if (!MatMode & !NewMatMode)
     {
-        Count++
-        local Entity = PropStorage[Count, entity]
-        local MatID = "Mat" + Entity["C", string]
+        Timer = "LastAction"
+    }
+    else
+    {
+        local PropCount = MatStorage:count()
+        local Material = DefaultMaterial
 
-        if (Types[MatID, string] == "s")
+        while (perf() & Count < PropCount)
         {
-            local Material = DB[MatID, string]
+            Count += 1
+            local Entity = MatStorage[Count, entity]
+
+            if (HasMat)
+            {
+                local MatID = "Mat" + Entity["C", string]
+
+                Material = Current[MatID, string]
+            }
 
             Entity:setMaterial(Material)
         }
+
+        if (Count >= PropCount)
+        {
+            Count = 0
+            Timer = "ApplySubMaterials"
+        }
     }
-    if (Count >= PropCount) { MatMode = N Count = 0 Timer = "LastAction" }
 
     timer(Timer, 200)
 }
 
-#Function to return the material of the entities to what it had when it was first detected
-function resetMaterial(N:number)
+function applySubMaterials()
 {
-    local PropCount = PropStorage:count()
+    local Timer = "ApplySubMaterials"
+    local PropCount = SubMatStorage:count()
+    local HasMat = Current["Mat", number]
+    local Material = DefaultMaterial
 
-    while (perf() & Count <= PropCount)
+    while (perf() & Count < PropCount)
     {
-        Count++
-        local Entity = PropStorage[Count, entity]
-        local Material = Entity["Mat", string]
-    
-        Entity:setMaterial(Material)
+        Count += 1
+        local Entity = SubMatStorage[Count, entity]
+        local SubMats = SubMatData[Count, array]
+
+        if (HasMat)
+        {
+            local MatID = "Mat" + Entity["C", string]
+
+            Material = Current[MatID, string]
+        }
+
+        foreach (K:number, V:number = SubMats)
+        {
+            Entity:setSubMaterial(V, Material)
+        }
     }
-    if (Count >= PropCount) { MatMode = N Count = 0 Timer = "LastAction" }
-    
+
+    if (Count >= PropCount)
+    {
+        Count = 0
+        MatMode = HasMat
+        Timer = "LastAction"
+    }
+
     timer(Timer, 200)
-}
-
-#Function that will decide if the material will be changed, resetted or kept the same
-function applyMaterials()
-{
-    local DB = Database[Camo, table]
-    local HasMat = DB["Mat", number]
-
-    switch (MatMode - HasMat)
-    {
-        case 1, resetMaterial(HasMat) break
-        case -1, setMaterial(HasMat, DB) break
-        case 0,
-            if (MatMode)
-            {
-                setMaterial(HasMat, DB)
-            }
-            else
-            {
-                MatMode = HasMat
-
-                timer("LastAction", 200)
-            }
-        break
-    }
 }
 
 #Function called whenever a timer triggers the E2
@@ -274,11 +323,10 @@ function timerAction()
         case "SortEntities", sortEntities() break
         case "ApplyColors", applyColors() break
         case "ApplyMaterials", applyMaterials() break
+        case "ApplySubMaterials", applySubMaterials() break
         case "LastAction",
-            runOnChat(1)
-            runOnLast(1)
-
             if (Reset) { reset() }
+            else { runOnChat(1) }
         break
     }
 }
@@ -290,12 +338,12 @@ function chatCommand()
 
     switch (Said[1, string])
     {
-        case "!camo-list",  case "!camolist", case "!clist", case "!cl",
+        case "!camo-list", case "!camolist", case "!clist", case "!cl",
             hideChat(1)
 
             showMessage("ListCamo")
         break
-        case "!camo-reset",  case "!camoreset", case "!creset", case "!cr",
+        case "!camo-reset", case "!camoreset", case "!creset", case "!cr",
             hideChat(1)
             runOnChat(0)
 
@@ -327,24 +375,42 @@ function array basicCamo(Red:vector)
     return array(Red, Green, Blue, Cyan, Yellow, Magenta)
 }
 
+#Function to add a new camouflage to the database
+function addCamo(CamoKey:string)
+{
+    CamoKey = CamoKey:trim():replace(" ","_")
+
+    if (!CamoKey | CamoKey == "undo") { NoName += 1 CamoKey = "camo" + NoName }
+
+    Current = Database[CamoKey, table] = table()
+
+    foreach (K:number, V:string = Keys)
+    {
+        Current[V, vector] = vec(255)
+    }
+}
+
 #Function to add maps to set the camo automatically
-function maps(Maps:array) { Database[CamoKey, table]["Maps", table] = invert(Maps) }
+function maps(Maps:array)
+{
+    Current["Maps", table] = invert(Maps)
+}
 
 #Function to set all the colors of the camouflage to the same
 function colors(Color:vector)
 {
-    foreach (K, Key:string = Keys)
+    foreach (K:number, Key:string = Keys)
     {
-        Database[CamoKey, table][Key, vector] = Color
+        Current[Key, vector] = Color
     }
 }
 
 #Function to set a specific color on the current camouflage
 function colors(Key:string, Color:vector)
 {
-    if (!invert(Keys)[Key, number]){ return }
+    if (!Lookup[Key, number]){ return }
 
-    Database[CamoKey, table][Key, vector] = Color
+    Current[Key, vector] = Color
 }
 
 #Function to define the colors of the last added camo with an array
@@ -358,28 +424,28 @@ function colors(Colors:array)
         local Key = Keys[I, string]
         local Color = Colors[I, vector]
 
-        Database[CamoKey, table][Key, vector] = Color
+        Current[Key, vector] = Color
     }
 }
 
 #Function to define a new material for all the painted props on the last added camo
 function material(Material:string)
 {
-    Database[CamoKey, table]["Mat", number] = 1
+    Current["Mat", number] = 1
 
-    foreach (K, Key:string = Keys)
+    foreach (K:number, Key:string = Keys)
     {
-        Database[CamoKey, table]["Mat" + Key, string] = Material
+        Current["Mat" + Key, string] = Material
     }
 }
 
 #Function to set a specific material on the current camouflage
 function material(Key:string, Material:string)
 {
-    if (!invert(Keys)[Key, number]){ return }
+    if (!Lookup[Key, number]){ return }
 
-    Database[CamoKey, table]["Mat", number] = 1
-    Database[CamoKey, table]["Mat" + Key, string] = Material
+    Current["Mat", number] = 1
+    Current["Mat" + Key, string] = Material
 }
 
 #Non family friendly function to define a new material for all the painted props on the last added camo
@@ -389,33 +455,21 @@ function material(Materials:array)
 
     if (!Count) { return }
 
-    Database[CamoKey, table]["Mat", number] = 1
+    Current["Mat", number] = 1
 
-    for (I = 1, Count){
+    for (I = 1, Count)
+    {
         local Key = "Mat" + Keys[I, string]
         local Material = Materials[I, string]
 
-        Database[CamoKey, table][Key, string] = Material
+        Current[Key, string] = Material
     }
 }
 
-#Function to add a new camouflage to the database
-function addCamo(S:string)
-{
-    CamoKey = S:replace(" ","")
-
-    if (!CamoKey | CamoKey == "undo") { NoName++ CamoKey = "camo"+NoName }
-
-    Database[CamoKey, table] = table()
-
-    foreach (K, V:string = Keys)
-    {
-        Database[CamoKey, table][V, vector] = vec(255)
-    }
-}
-
-CamoKey = "undo" Database[CamoKey, table] = table()
+#Yes, this is a work-around
+Current = Database["undo", table] = table()
     colors(array(vec(255,0,0), vec(0,255,0), vec(0,0,255), vec(0,255,255), vec(255,255,0), vec(255,0,255)))
+    material(DetectMaterial)
 
 addCamo("clean")
     material("")

@@ -1,9 +1,9 @@
 @name Twisted's Camo E2 V2
 @inputs [Base]:entity
 @outputs [Camo]:string [Entities]:array
-#@autoupdate on
+@autoupdate on
 
-#----------------------------------- E2 made by TwistedTail - Version 2.1 -----------------------------------#
+#----------------------------------- E2 made by TwistedTail - Version 2.2 -----------------------------------#
 #------------------------------------------- Updates for the E2: --------------------------------------------#
 #------------------- https://github.com/TwistedTail/Public-E2s/tree/master/Camo%20E2%20V2 -------------------#
 
@@ -12,8 +12,9 @@ elseif (first())
 {
     #include "lib/camolib2"
 
-    AutoPaint = 1       #Set to 1 if you want the E2 to detect the map and change the camo automatically if there's one available
+    AutoPaint = 0       #Set to 1 if you want the E2 to detect the map and change the camo automatically if there's one available
     DefaultCamo = ""    #In case AutoPaint is on and the map is not found, we'll use this camo
+    DefaultMaterial = "models/props_debris/building_template010a"
 
     # Here's where you add camouflages
     addCamo("desert")
